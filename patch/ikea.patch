@@ -1,0 +1,142 @@
+diff --git a/linux/arch/x86/entry/syscalls/syscall_32.tbl b/linux/arch/x86/entry/syscalls/syscall_32.tbl
+index 0d0667a9f..030906f12 100644
+--- a/linux/arch/x86/entry/syscalls/syscall_32.tbl
++++ b/linux/arch/x86/entry/syscalls/syscall_32.tbl
+@@ -445,3 +445,5 @@
+ 438	i386	pidfd_getfd		sys_pidfd_getfd
+ 439	i386	faccessat2		sys_faccessat2
+ 440	i386	process_madvise		sys_process_madvise
++
++505	i386	inspect_cabinet		sys_inspect_cabinet
+diff --git a/linux/arch/x86/entry/syscalls/syscall_64.tbl b/linux/arch/x86/entry/syscalls/syscall_64.tbl
+index 379819244..1e8e7ffa2 100644
+--- a/linux/arch/x86/entry/syscalls/syscall_64.tbl
++++ b/linux/arch/x86/entry/syscalls/syscall_64.tbl
+@@ -363,6 +363,8 @@
+ 439	common	faccessat2		sys_faccessat2
+ 440	common	process_madvise		sys_process_madvise
+ 
++505	common	inspect_cabinet		sys_inspect_cabinet
++
+ #
+ # Due to a historical design error, certain syscalls are numbered differently
+ # in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+diff --git a/linux/include/linux/cabinet.h b/linux/include/linux/cabinet.h
+new file mode 100644
+index 000000000..9f2abfcd5
+--- /dev/null
++++ b/linux/include/linux/cabinet.h
+@@ -0,0 +1,6 @@
++#ifndef _LINUX_CABINET_H
++#define _LINUX_CABINET_H
++
++#include <uapi/linux/cabinet.h>
++
++#endif
+diff --git a/linux/include/linux/syscalls.h b/linux/include/linux/syscalls.h
+index aea0ce9f3..69691db5f 100644
+--- a/linux/include/linux/syscalls.h
++++ b/linux/include/linux/syscalls.h
+@@ -68,6 +68,7 @@ union bpf_attr;
+ struct io_uring_params;
+ struct clone_args;
+ struct open_how;
++struct cab_info;
+ 
+ #include <linux/types.h>
+ #include <linux/aio_abi.h>
+@@ -1032,6 +1033,8 @@ asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
+ 				       siginfo_t __user *info,
+ 				       unsigned int flags);
+ asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
++asmlinkage long sys_inspect_cabinet(pid_t pid, unsigned long vaddr,
++				struct cab_info __user *inventory);
+ 
+ /*
+  * Architecture-specific system calls
+diff --git a/linux/include/uapi/asm-generic/unistd.h b/linux/include/uapi/asm-generic/unistd.h
+index 205631898..5cff3f813 100644
+--- a/linux/include/uapi/asm-generic/unistd.h
++++ b/linux/include/uapi/asm-generic/unistd.h
+@@ -863,6 +863,12 @@ __SYSCALL(__NR_process_madvise, sys_process_madvise)
+ #undef __NR_syscalls
+ #define __NR_syscalls 441
+ 
++#define __NR_inspect_cabinet 505
++__SYSCALL(__NR_inspect_cabinet, sys_inspect_cabinet)
++
++#undef __NR_syscalls
++#define __NR_syscalls (__NR_inspect_cabinet + 1)
++
+ /*
+  * 32 bit systems traditionally used different
+  * syscalls for off_t and loff_t arguments, while
+diff --git a/linux/include/uapi/linux/cabinet.h b/linux/include/uapi/linux/cabinet.h
+new file mode 100644
+index 000000000..bff01bc8c
+--- /dev/null
++++ b/linux/include/uapi/linux/cabinet.h
+@@ -0,0 +1,17 @@
++#ifndef _UAPI_LINUX_CABINET_H
++#define _UAPI_LINUX_CABINET_H
++
++#include <linux/types.h>
++
++struct cab_info {
++	unsigned long paddr;  /* physical addr the virtual addr is mapped to */
++	unsigned long pf_paddr;   /* physical address of its page frame */
++	unsigned long pte_paddr;  /* physical addr of its PTE */
++	unsigned long pmd_paddr;  /* physical addr of its PMD */
++	unsigned long pud_paddr;  /* physical addr of its PUD */
++	unsigned long p4d_paddr;  /* physical addr of its P4D */
++	unsigned long pgd_paddr;  /* physical addr of its PGD */
++	int dirty;  /* 1 if dirty, 0 otherwise */
++	int refcount;  /* number of processes sharing the physical addr */
++};
++#endif
+diff --git a/linux/kernel/Makefile b/linux/kernel/Makefile
+index e7905bdf6..1b24b9b9d 100644
+--- a/linux/kernel/Makefile
++++ b/linux/kernel/Makefile
+@@ -10,7 +10,8 @@ obj-y     = fork.o exec_domain.o panic.o \
+ 	    extable.o params.o \
+ 	    kthread.o sys_ni.o nsproxy.o \
+ 	    notifier.o ksysfs.o cred.o reboot.o \
+-	    async.o range.o smpboot.o ucount.o regset.o
++	    async.o range.o smpboot.o ucount.o regset.o \
++		cabinet.o
+ 
+ obj-$(CONFIG_USERMODE_DRIVER) += usermode_driver.o
+ obj-$(CONFIG_MODULES) += kmod.o
+diff --git a/linux/kernel/cabinet.c b/linux/kernel/cabinet.c
+new file mode 100644
+index 000000000..367d9f335
+--- /dev/null
++++ b/linux/kernel/cabinet.c
+@@ -0,0 +1,26 @@
++#include <linux/syscalls.h>
++#include <linux/mm.h>
++#include <asm/pgtable.h>
++#include <asm/page.h>
++#include <linux/printk.h>
++#include <linux/cabinet.h>
++
++long inspect_cabinet_default(pid_t pid, unsigned long vaddr,
++		struct cab_info __user *inventory)
++{
++	pr_err("cabinet module not running.\n");
++	return -ENOSYS;
++}
++
++long (*inspect_cabinet_ptr)(int pid, unsigned long vaddr,
++		struct cab_info *inventory) = inspect_cabinet_default;
++
++SYSCALL_DEFINE3(inspect_cabinet, pid_t, pid, unsigned long, vaddr,
++		struct cab_info __user *, inventory)
++{
++	return inspect_cabinet_ptr(pid, vaddr, inventory);
++}
++
++
++EXPORT_SYMBOL(inspect_cabinet_default);
++EXPORT_SYMBOL(inspect_cabinet_ptr);
