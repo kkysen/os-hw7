@@ -688,13 +688,40 @@ watch-kernel-files *args:
         currentCommand = run();
     }
 
+    async function ensureUnlinked(path) {
+        try {
+            await fsp.unlink(path);
+            console.log(`removed: ${path}`);
+        } catch {}
+    }
+
     async function main() {
+        process.chdir("{{just_dir}}");
         const [outputFiles, extraArgs] = "{{args}}"
             .split(" -- ")
             .map(s => s.split(" "))
             ;
+        const anyOutputFilesRelative = outputFiles.some(file => file.startsWith("./"));
+        if (!anyOutputFilesRelative) {
+            process.chdir("linux");
+        }
+        async function deleteOutputFiles() {
+            await Promise.all(outputFiles.map(ensureUnlinked));
+        }
+        function onSignal() {
+            (async () => {
+                await deleteOutputFiles();
+                process.exit();
+            })();
+        }
 
-        process.chdir(pathLib.join("{{just_dir}}", "linux"));
+        process.on("beforeExit", deleteOutputFiles);
+        [
+            "SIGINT",
+            "SIGQUIT",
+            "SIGTERM",
+        ].forEach(signal => process.on(signal, onSignal));
+
         await Promise.all(outputFiles.map(outputFile => watchKernelFile({
             outputFile,
             extraArgs,
