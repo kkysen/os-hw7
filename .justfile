@@ -1,6 +1,6 @@
 set shell := ["bash", "-c"]
 
-hw := "6"
+hw := "7"
 n_proc := `nproc`
 just_dir := justfile_directory()
 cwd := invocation_directory()
@@ -78,36 +78,18 @@ make-non-kernel *args: (make-user args)
 
 make-kernel *args: (make-in "linux" args)
 
-freezer_o := "kernel/sched/freezer.o"
-
-make-freezer *args: (make-kernel freezer_o)
-
-make-sched *args: (make-kernel "kernel/sched/")
-
 modify-config:
     #!/usr/bin/env bash
     set -euox pipefail
 
     config="./linux/scripts/config --file linux/.config"
     uni="$(just get-git-uni)"
-    version="-${uni}"
-    branch="$(just current-branch)"
-
-    if [[ "${branch}" == "muqss" ]]; then
-        version+="-muqss"
-    else
-        version+="-freezer"
-    fi
+    version="-${uni}-HW{{hw}}"
 
     $config \
         --enable BLK_DEV_LOOP \
         --set-val SYSTEM_TRUSTED_KEYS '' \
-        --set-str LOCALVERSION "${version}"
-
-    if [[ "${branch}" == "muqss" ]]; then
-        exit
-    fi
-    $config \
+        --set-str LOCALVERSION "${version}" \
         --enable STACKTRACE \
         --enable KASAN \
         --enable KASAN_GENERIC \
@@ -121,21 +103,16 @@ modify-config:
         --disable UBSAN_SANITIZE_ALL \
         --disable UBSAN_ALIGNMENT \
         --disable TEST_UBSAN \
-        --enable FUNCTION_TRACER \
-        --enable FUNCTION_GRAPH_TRACER \
-        --enable STACK_TRACER \
-        --enable DYNAMIC_FTRACE \
         --disable RANDOMIZE_BASE
 
 generate-config: && modify-config
     yes '' | just make-kernel localmodconfig
 
-apply-muqss-patch:
-    git checkout muqss
-    cd linux && patch -p1 < ../patch/0001-MultiQueue-Skiplist-Scheduler-v0.205.patch
+apply-patch *args:
+    git apply {{args}} patch/ikea.patch
 
 setup-kernel: (make-kernel "mrproper") generate-config make-kernel install-kernel
-    @echo now reboot
+    sudo reboot now
 
 git-clone repo *args=("--recursive"):
     cd "{{invocation_directory()}}" && \
@@ -159,7 +136,13 @@ reinstall-kedr:
 # Paranthesized deps to avoid checkpatch repeated word warning
 make: (pre-make) (make-non-kernel) (make-kernel)
 
-install-kernel-no-sudo: (make-kernel "headers_install") (make-kernel "modules_install") (make-kernel "install")
+install-kernel-headers: (make-kernel "headers_install" "INSTALL_HDR_PATH=/usr")
+
+install-kernel-modules: (make-kernel "modules_install")
+
+install-kernel-only: (make-kernel "install")
+
+install-kernel-no-sudo: install-kernel-headers install-kernel-modules install-kernel-only
 
 install-kernel: make-kernel
     sudo -E env "PATH=${PATH}" just install-kernel-no-sudo
@@ -270,9 +253,9 @@ join-compile-commands *dirs:
         process.exit(1);
     });
 
-compile-commands-all: compile-commands-non-kernel compile-commands-kernel (join-compile-commands "user" "linux")
+compile-commands-all: compile-commands-non-kernel compile-commands-kernel (join-compile-commands "user")
 
-compile-commands-min: compile-commands-non-kernel (compile-commands-kernel-dir "include") (compile-commands-kernel-dir "kernel/sched") (join-compile-commands "user" "linux/include" "linux/kernel/sched")
+compile-commands-min: compile-commands-non-kernel (join-compile-commands "user")
 
 compile-commands: compile-commands-min
 
@@ -296,11 +279,9 @@ run-mod mod_path *args:
     bat --paging never info possible_leaks unallocated_frees
     sudo kedr stop
 
-test *args: (run-mod default_mod_path args)
+test-cmd *args: (run-mod default_mod_path args)
 
-test-part-raw part_name *args: (make-in "user/test/FireFerrises-p" + part_name + "-test" args)
-
-test-part part_name: (test "just" "test-part-raw" part_name "test-all")
+test: (test-cmd "just" "make-test" "run")
 
 current-branch:
     git branch --show-current || git rev-parse --abbrev-ref HEAD
@@ -317,12 +298,12 @@ untag name:
     git push --delete origin "{{name}}"
     git tag --delete "{{name}}"
 
-checkout-tag part:
-    git checkout "hw{{hw}}p{{part}}handin"
+checkout-tag:
+    git checkout "hw{{hw}}handin"
 
-submit part: (tag "hw" + hw + "p" + part + "handin" "Completed hw" + hw + " part" + part + ".")
+submit: (tag "hw" + hw + "handin" "Completed hw" + hw + ".")
 
-unsubmit part: (untag "hw" + hw + "p" + part + "handin")
+unsubmit: (untag "hw" + hw + "handin")
 
 diff-command:
     command -v delta > /dev/null && echo delta || echo diff
@@ -330,7 +311,7 @@ diff-command:
 diff a b:
     "$(just diff-command)" "{{a}}" "{{b}}"
 
-default_mod_path := "user/module/fridge/fridge.ko"
+default_mod_path := "user/module/cabinet/cabinet.ko"
 
 is-mod-loaded name=file_stem(default_mod_path):
     rg --quiet '^{{name}} ' /proc/modules
@@ -349,7 +330,7 @@ unload-mod name=file_stem(default_mod_path):
 unload-mod-by-path path_=default_mod_path: (unload-mod file_stem(path_))
 
 check_patch_ignores_common := "FILE_PATH_CHANGES,SPDX_LICENSE_TAG,MISSING_EOF_NEWLINE"
-check_patch_ignores_hw := "EXPORT_SYMBOL,ENOSYS,AVOID_EXTERNS,LINE_CONTINUATIONS,AVOID_BUG"
+check_patch_ignores_hw := "EXPORT_SYMBOL,ENOSYS,AVOID_EXTERNS,LINE_CONTINUATIONS"
 
 raw-check-patch *args:
     ./linux/scripts/checkpatch.pl --max-line-length=80 --ignore "{{check_patch_ignores_common}},{{check_patch_ignores_hw}}" {{args}}
@@ -505,12 +486,6 @@ rename-branch old_name new_name:
 
 trace *args:
     sudo trace-cmd {{args}}
-
-jiffies:
-    ./user/test/jiffies/jiffies.sh
-
-split-procs:
-    ./user/test/split-procs/split-procs.sh
 
 # args = files -- extra args
 watch-kernel-files *args:
@@ -717,13 +692,3 @@ watch-kernel-files *args:
         process.exit(1);
     });
 
-watch-freezer *args: (watch-kernel-files freezer_o "--" args)
-
-make-set-freezer *args: (make-in "user/test/set-freezer" args)
-
-set-freezer pid: make-set-freezer
-    sudo ./user/test/set-freezer/set-freezer {{pid}}
-
-patch-grub:
-    sudo patch --input patch/grub.patch --unified --backup --forward /etc/default/grub
-    sudo update-grub
