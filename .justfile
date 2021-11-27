@@ -219,7 +219,7 @@ gitui: pre-commit
     gitui
 
 compile-commands-non-kernel: (make-non-kernel "clean")
-    cd user && bear -- just make-non-kernel
+    cd user && bear -- just make-non-kernel all
     command -v ccache > /dev/null \
         && sd "$(which ccache)" "$(which gcc)" user/compile_commands.json \
         || true
