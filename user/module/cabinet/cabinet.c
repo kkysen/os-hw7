@@ -38,7 +38,12 @@ long inspect_cabinet(int pid,
 		pid = current->pid;
 		task = current;
 	} else {
-		task = find_task_by_vpid(pid);
+		struct pid *pid_struct;
+
+		pid_struct = find_vpid(pid);
+		if (!pid_struct)
+			return -ESRCH;
+		task = pid_task(pid_struct, PIDTYPE_PID);
 		if (!task)
 			return -ESRCH;
 	}
