@@ -1,20 +1,26 @@
-/*
+/**
  * cabinet.c
  */
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/cabinet.h>
+
+#pragma GCC diagnostic pop
 
 extern long (*inspect_cabinet_ptr)(int pid, unsigned long vaddr,
 		struct cab_info *inventory);
 extern long (*inspect_cabinet_default)(int pid, unsigned long vaddr,
 		struct cab_info *inventory);
 
-long inspect_cabinet(int pid, unsigned long vaddr, struct cab_info *inventory)
+long inspect_cabinet(int pid __always_unused,
+		     unsigned long vaddr __always_unused,
+		     struct cab_info *inventory __always_unused)
 {
-
-	/* implement here */
-	return 0;
+	return -ENOSYS;
 }
 
 
@@ -36,4 +42,4 @@ module_exit(cabinet_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Cabinet: a virtual to physical memory mapper");
-MODULE_AUTHOR("John Hui");
+MODULE_AUTHOR("FireFerrises");

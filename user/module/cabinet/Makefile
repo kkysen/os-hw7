@@ -1,6 +1,14 @@
+MAKE_DIR := /lib/modules/$(shell uname -r)/build
+
 obj-m += cabinet.o
 
+CFLAGS_cabinet.o += -Wall -Werror -Wextra
+
+KASAN_SANITIZE_cabinet.o := $(CONFIG_KASAN)
+UBSAN_SANITIZE_cabinet.o := $(CONFIG_UBSAN)
+
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	$(MAKE) -C $(MAKE_DIR) M=$(PWD) modules
+
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	$(MAKE) -C $(MAKE_DIR) M=$(PWD) clean
