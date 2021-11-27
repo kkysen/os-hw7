@@ -32,6 +32,7 @@ install-program-dependencies:
     cargo quickinstall ripgrep
     cargo quickinstall fd-find
     cargo quickinstall sd
+    cargo quickinstall sk
     cargo quickinstall gitui
 
 parallel-bash-commands:
