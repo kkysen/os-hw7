@@ -1,6 +1,7 @@
 set shell := ["bash", "-c"]
 
 hw := "7"
+team_name := "FireFerrises"
 n_proc := `nproc`
 just_dir := justfile_directory()
 cwd := invocation_directory()
@@ -268,8 +269,18 @@ log *args:
 
 log-watch *args: (log "--follow-new" args)
 
+kedr-stop-no-sudo:
+    #!/usr/bin/env bash
+    set -euox pipefail
+
+    cd /sys/kernel/debug/kedr_leak_check
+    bat --paging never info possible_leaks unallocated_frees
+    kedr stop
+
 run-mod mod_path *args:
     #!/usr/bin/env bash
+    set -uox pipefail
+
     just log | wc -l > log.length
     sudo kedr start "{{mod_path}}"
     echo "running $(tput setaf 2){{file_stem(mod_path)}}$(tput sgr 0):"
@@ -278,14 +289,11 @@ run-mod mod_path *args:
     just unload-mod-by-path "{{mod_path}}"
     just log --color=always | tail -n "+$(($(cat log.length) + 1))"
     rm log.length
-    exit
-    cd /sys/kernel/debug/kedr_leak_check
-    bat --paging never info possible_leaks unallocated_frees
-    sudo kedr stop
+    sudo -E env "PATH=${PATH}" just kedr-stop-no-sudo
 
 test-cmd *args: (run-mod default_mod_path args)
 
-test: (test-cmd "just" "make-test" "run")
+test: (test-cmd "just" "make-in" join("user/test", team_name) "test-all")
 
 current-branch:
     git branch --show-current || git rev-parse --abbrev-ref HEAD
