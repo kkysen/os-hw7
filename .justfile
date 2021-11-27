@@ -167,8 +167,12 @@ refmt *paths:
         // fix for each macros
         s = s.replaceAll(/([a-z_]*for_each[a-z_]*) /g, (_, macroName) => macroName);
         const to = s;
-        await fsp.writeFile(path, s);
-        return s !== original;
+        const changed = s !== original;
+        if (changed) {
+            // only update timestamps if we really need to change something
+            await fsp.writeFile(path, s);
+        }
+        return changed;
     }
 
     async function main() {
