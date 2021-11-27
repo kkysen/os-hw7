@@ -1,6 +1,6 @@
 #include <linux/syscalls.h>
 #include <linux/mm.h>
-#include <asm/pgtable.h>
+#include <linux/pgtable.h>
 #include <asm/page.h>
 #include <linux/printk.h>
 #include <linux/cabinet.h>
