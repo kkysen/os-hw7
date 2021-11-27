@@ -32,6 +32,12 @@ long inspect_cabinet(int pid,
 	is_root = uid_eq(euid, GLOBAL_ROOT_UID);
 	if (!is_root)
 		return -EACCES;
+	/**
+	 * Should we check root directly or check `CAP_SYS_RAWIO`,
+	 * which similarly allows accessing `/dev/mem`?
+	 */
+	//if (!capable(CAP_SYS_RAWIO))
+	//	return -EACCES;
 	if (pid < -1)
 		return -EINVAL;
 	if (pid == -1) {
