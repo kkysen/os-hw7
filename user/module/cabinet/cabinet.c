@@ -8,6 +8,10 @@
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/cabinet.h>
+#include <linux/kernel.h>
+#include <linux/sched.h>
+#include <linux/cred.h>
+#include <linux/uaccess.h>
 
 #pragma GCC diagnostic pop
 
@@ -16,10 +20,29 @@ extern long (*inspect_cabinet_ptr)(int pid, unsigned long vaddr,
 extern long (*inspect_cabinet_default)(int pid, unsigned long vaddr,
 		struct cab_info *inventory);
 
-long inspect_cabinet(int pid __always_unused,
+long inspect_cabinet(int pid,
 		     unsigned long vaddr __always_unused,
 		     struct cab_info *inventory __always_unused)
 {
+	kuid_t euid;
+	bool is_root;
+	struct task_struct *task;
+
+	euid = current_cred()->euid;
+	is_root = uid_eq(euid, GLOBAL_ROOT_UID);
+	if (!is_root)
+		return -EACCES;
+	if (pid < -1)
+		return -EINVAL;
+	if (pid == -1) {
+		pid = current->pid;
+		task = current;
+	} else {
+		task = find_task_by_vpid(pid);
+		if (!task)
+			return -ESRCH;
+	}
+
 	return -ENOSYS;
 }
 
