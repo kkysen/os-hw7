@@ -692,3 +692,8 @@ watch-kernel-files *args:
         process.exit(1);
     });
 
+symlink-in-dir dir target link *args:
+    cd "{{dir}}" && ln {{args}} "{{target}}" "{{link}}"
+
+symlink-readmes:
+    fd '^README.txt$' --exec just symlink-in-dir '{//}' '{/}' '{/.}.md' --symbolic --force
