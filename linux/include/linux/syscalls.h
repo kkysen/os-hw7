@@ -68,6 +68,7 @@ union bpf_attr;
 struct io_uring_params;
 struct clone_args;
 struct open_how;
+struct cab_info;
 
 #include <linux/types.h>
 #include <linux/aio_abi.h>
@@ -1032,6 +1033,8 @@ asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
 				       siginfo_t __user *info,
 				       unsigned int flags);
 asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
+asmlinkage long sys_inspect_cabinet(pid_t pid, unsigned long vaddr,
+				struct cab_info __user *inventory);
 
 /*
  * Architecture-specific system calls

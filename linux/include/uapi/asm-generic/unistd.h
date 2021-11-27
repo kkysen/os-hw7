@@ -863,6 +863,12 @@ __SYSCALL(__NR_process_madvise, sys_process_madvise)
 #undef __NR_syscalls
 #define __NR_syscalls 441
 
+#define __NR_inspect_cabinet 505
+__SYSCALL(__NR_inspect_cabinet, sys_inspect_cabinet)
+
+#undef __NR_syscalls
+#define __NR_syscalls (__NR_inspect_cabinet + 1)
+
 /*
  * 32 bit systems traditionally used different
  * syscalls for off_t and loff_t arguments, while
