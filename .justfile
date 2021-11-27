@@ -11,18 +11,19 @@ default:
 
 install-program-dependencies:
     sudo apt install \
-        clang-format \
-        bear \
-        make \
         build-essential \
-        bc \
+        curl \
+        make \
         python \
+        bc \
         bison \
         flex \
         libelf-dev \
         libssl-dev \
         libncurses-dev \
         dwarves \
+        clang-format \
+        bear \
         rsync \
         trace-cmd
     command -v cargo > /dev/null || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
