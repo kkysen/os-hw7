@@ -11,6 +11,6 @@ clean:
 PHONY += test-all
 test-all:
 	$(MAKE) -C ../cabinet_inspector/ all
-	../cabinet_inspector/cabinet_inspector
+	sudo ../cabinet_inspector/cabinet_inspector
 
 .PHONY: $(PHONY)
