@@ -567,10 +567,17 @@ watch-kernel-files *args:
         return by;
     }
 
+    function logArgs(args) {
+        const n = 10;
+        if (args.length > n * 2) {
+            args = [...args.slice(0, 5), "...", ...args.slice(-5)];
+        }
+        console.log(args.join(" "));
+    }
+
     async function spawn(options) {
         const {args} = options;
-        // console.log(args.join(" "));
-        console.log([...args.slice(0, 5), "...", ...args.slice(-5)].join(" "));
+        logArgs(args);
         const child = childProcess.spawn(args[0], args.slice(1), options);
         child.wait = () => new Promise((resolve, reject) => {
             child.on("exit", (code, signal) => {
@@ -586,6 +593,23 @@ watch-kernel-files *args:
         });
     }
 
+    async function canAccess(path, mode) {
+        try {
+            await fsp.access(path, mode);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async function tryStat(path) {
+        try {
+            return await fsp.stat(path);
+        } catch {
+            return;
+        }
+    }
+
     async function watchKernelFile({outputFile, extraArgs = []}) {
         const {dir, base} = pathLib.parse(outputFile);
         const [cmdPath, depsPath] = ["cmd", "d"]
@@ -594,7 +618,8 @@ watch-kernel-files *args:
         const cmds = await parseSimpleMakeFile(cmdPath);
         ["cmd", "source", "deps"].forEach(prefix => {
             const {def} = cmds;
-            def[prefix] = name => def[`${prefix}_${name}`];
+            def[prefix] = name => def[`${prefix}_${name}`]
+                ?? def[`${prefix}_${pathLib.resolve(name)}`];
         });
         const cmdArgs = cmds.def.cmd(outputFile);
 
@@ -626,18 +651,26 @@ watch-kernel-files *args:
             console.log();
         }
 
-        try {
-            await fsp.access(depsPath, fs.constants.R_OK);
-        } catch {
-            await runCommandWithExtraArgs({
-                extraArgs: [],
-                reason: "building once for dependencies",
-            });
+        let hasDepsFile = await canAccess(depsPath, fs.constants.R_OK);
+        if (!hasDepsFile) {
+            if (cmdArgs.value.includes(pathLib.basename(depsPath))) {
+                await runCommandWithExtraArgs({
+                    extraArgs: [],
+                    reason: "building once for dependencies",
+                });
+                hasDepsFile = true;
+            }
         }
-
-        const deps = await parseSimpleMakeFile(depsPath);
-        const depPaths = deps.rule[base].values;
-        // console.log({cmds, deps});
+        const depPaths = await (async () => {
+            if (hasDepsFile) {
+                const deps = await parseSimpleMakeFile(depsPath);
+                return deps.rule[base].values;
+            } else {
+                const src = cmds.def.source(outputFile);
+                return src === undefined ? [] : [src];
+            }
+        })();
+        // console.log({cmds, cmdArgs, depPaths});
 
         async function runCommand() {
             await runCommandWithExtraArgs({
@@ -695,16 +728,64 @@ watch-kernel-files *args:
         } catch {}
     }
 
-    async function main() {
-        process.chdir("{{just_dir}}");
-        const [outputFiles, extraArgs] = "{{args}}"
-            .split(" -- ")
-            .map(s => s.split(" "))
-            ;
-        const anyOutputFilesRelative = outputFiles.some(file => file.startsWith("./"));
-        if (!anyOutputFilesRelative) {
-            process.chdir("linux");
+    function cd(dir) {
+        const relativeDir = pathLib.relative(".", dir);
+        if (relativeDir == "") {
+            return;
         }
+        console.log(`cd ${relativeDir}`);
+        process.chdir(relativeDir);
+    }
+
+    async function main() {
+        const relativeDir = "linux";
+        cd("{{just_dir}}");
+        const {outputs, extraArgs} = (() => {
+            const args = "{{args}}";
+            // console.log({args});
+            const [outputs, extraArgs] = args
+                .split(" -- ")
+                .map(s => s === "" ? [] : s.split(" "))
+                ;
+            return {
+                outputs: outputs.map(path => {
+                    if (!path.startsWith("./")) {
+                        return path;
+                    }
+                    return pathLib.relative(relativeDir, path);
+                }),
+                extraArgs: extraArgs ?? [],
+            };
+        })();
+        console.log({outputs, extraArgs});
+        cd(relativeDir);
+        const outputFiles = (await Promise.all(outputs.map(async path => {
+            const stats = await fsp.stat(path);
+            if (!stats?.isDirectory()) {
+                return path;
+            }
+            // only do a shallow search, no recursion
+            const dir = path;
+            const files = await fsp.readdir(dir);
+            return files
+                .map(file => {
+                    const start = ".";
+                    const end = ".cmd";
+                    const i = file.indexOf(start);
+                    if (i === -1) {
+                        return;
+                    }
+                    const j = file.lastIndexOf(end);
+                    if (j === -1) {
+                        return;
+                    }
+                    const outputFile = file.slice(i + start.length, j);
+                    return pathLib.join(dir, outputFile);
+                })
+                .filter(Boolean)
+                ;
+        }))).flat();
+        console.log({outputFiles});
         async function deleteOutputFiles() {
             await Promise.all(outputFiles.map(ensureUnlinked));
         }
@@ -733,7 +814,7 @@ watch-kernel-files *args:
         process.exit(1);
     });
 
-watch-cabinet *args: (watch-kernel-files join(just_dir, "user/module/cabinet/cabinet.o") "--" args)
+watch-cabinet *args: (watch-kernel-files "./user/module/cabinet/cabinet.o" "--" args)
 
 symlink-in-dir dir_ target link *args:
     cd "{{dir_}}" && ln {{args}} "{{target}}" "{{link}}"
