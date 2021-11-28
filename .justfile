@@ -787,6 +787,7 @@ watch-kernel-files *args:
         }))).flat();
         console.log({outputFiles});
         async function deleteOutputFiles() {
+            return;
             await Promise.all(outputFiles.map(ensureUnlinked));
         }
         function onSignal() {
