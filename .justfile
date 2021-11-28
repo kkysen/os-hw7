@@ -815,7 +815,7 @@ watch-kernel-files *args:
         process.exit(1);
     });
 
-watch-cabinet *args: (watch-kernel-files "./user/module/cabinet/cabinet.o" "--" args)
+watch-cabinet *args: (watch-kernel-files "./user/module/cabinet/" "--" args)
 
 symlink-in-dir dir_ target link *args:
     cd "{{dir_}}" && ln {{args}} "{{target}}" "{{link}}"
