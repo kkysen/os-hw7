@@ -20,13 +20,18 @@ extern long (*inspect_cabinet_ptr)(int pid, unsigned long vaddr,
 extern long (*inspect_cabinet_default)(int pid, unsigned long vaddr,
 		struct cab_info *inventory);
 
+void lookup_cab_info(unsigned long vaddr __always_unused, struct cab_info *info) {
+	*info = (struct cab_info) {0};
+}
+
 long inspect_cabinet(int pid,
-		     unsigned long vaddr __always_unused,
-		     struct cab_info *inventory __always_unused)
+		     unsigned long vaddr,
+		     struct cab_info *inventory)
 {
 	kuid_t euid;
 	bool is_root;
 	struct task_struct *task;
+	struct cab_info info;
 
 	euid = current_cred()->euid;
 	is_root = uid_eq(euid, GLOBAL_ROOT_UID);
@@ -54,9 +59,14 @@ long inspect_cabinet(int pid,
 			return -ESRCH;
 	}
 
-	return -ENOSYS;
-}
+	/* TODO: check vaddr is a valid addr first? */
 
+	lookup_cab_info(vaddr, &info);
+	if (copy_to_user(inventory, &info, sizeof(info)) != 0)
+		return -EFAULT;
+
+	return 0;
+}
 
 int cabinet_init(void)
 {
