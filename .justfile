@@ -271,20 +271,23 @@ log *args:
 
 log-watch *args: (log "--follow-new" args)
 
+use_kedr := "false"
+
 kedr-stop-no-sudo:
     #!/usr/bin/env bash
-    set -euox pipefail
+    set -euo pipefail
 
+    [[ "{{use_kedr}}" != "true" ]] && exit
     cd /sys/kernel/debug/kedr_leak_check
     bat --paging never info possible_leaks unallocated_frees
     kedr stop
 
 run-mod mod_path *args:
     #!/usr/bin/env bash
-    set -uox pipefail
+    set -uo pipefail
 
     just log | wc -l > log.length
-    sudo kedr start "{{mod_path}}"
+    [[ "{{use_kedr}}" == "true" ]] && sudo kedr start "{{mod_path}}"
     echo "running $(tput setaf 2){{file_stem(mod_path)}}$(tput sgr 0):"
     just load-mod "{{mod_path}}"
     {{args}}
