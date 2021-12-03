@@ -29,40 +29,37 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 	pmd_t *pmd;
 	pte_t *pte;
 
+	#define check_pxd(x) \
+	if (!p##x##d_present(*p##x##d)) \
+		return 0; \
+	if (p##x##d_bad(*p##x##d) || p##x##d_none(*p##x##d)) \
+		return -EINVAL
+
 	/* zero everything in case we return early */
 	*info = (struct cab_info){ 0 };
 	pgd = pgd_offset(task->mm, vaddr);
-	if (!pgd_present(*pgd))
-		return 0;
-	if (pgd_bad(*pgd) || pgd_none(*pgd))
-		return -EINVAL;
+	check_pxd(g);
 	info->pgd_paddr = __pa(pgd);
 
 	p4d = p4d_offset(pgd, vaddr);
-	if (!p4d_present(*p4d))
-		return 0;
-	if (p4d_bad(*p4d) || p4d_none(*p4d))
-		return -EINVAL;
-	info->p4d_paddr = (pgd_val(*pgd) & PTE_PFN_MASK) + p4d_index(vaddr);
+	check_pxd(4);
+	info->p4d_paddr = (pgd_val(*pgd) & PTE_PFN_MASK);
 
 	pud = pud_offset(p4d, vaddr);
-	if (!pud_present(*pud))
-		return 0;
-	if (pud_bad(*pud) || pud_none(*pud))
-		return -EINVAL;
-	info->pud_paddr = (p4d_val(*p4d) & p4d_pfn_mask(*p4d)) + pud_index(vaddr);
+	check_pxd(u);
+	info->pud_paddr = (p4d_val(*p4d) & p4d_pfn_mask(*p4d));
 
 	pmd = pmd_offset(pud, vaddr);
-	if (!pmd_present(*pmd))
-		return 0;
-	if (pmd_bad(*pmd) || pmd_none(*pmd))
-		return -EINVAL;
-	info->pmd_paddr = (pud_val(*pud) & pud_pfn_mask(*pud)) + pmd_index(vaddr);
+	check_pxd(m);
+	info->pmd_paddr = (pud_val(*pud) & pud_pfn_mask(*pud));
 
 	pte = pte_offset_map(pmd, vaddr);
 	if (!pte || !pte_present(*pte))
 		return 0;
-	info->pte_paddr = (pmd_val(*pmd) & pmd_pfn_mask(*pmd)) + pte_index(vaddr);
+	info->pte_paddr = (pmd_val(*pmd) & pmd_pfn_mask(*pmd));
+
+	#undef set_paddr
+	#undef check_pxd
 
 	info->pf_paddr =
 		(unsigned long)((phys_addr_t)pte_pfn(*pte) << PAGE_SHIFT);
