@@ -20,7 +20,7 @@ extern long (*inspect_cabinet_ptr)(int pid, unsigned long vaddr,
 extern long (*inspect_cabinet_default)(int pid, unsigned long vaddr,
 				       struct cab_info *inventory);
 
-void lookup_cab_info(struct task_struct *task, unsigned long vaddr,
+long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 		     struct cab_info *info)
 {
 	pgd_t *pgd;
@@ -28,68 +28,77 @@ void lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
-	struct page *page;
-
-#define next_offset_using(cur, next, offset, check)                                \
-	do {                                                                       \
-		unsigned long pfn;                                                 \
-		phys_addr_t phys_addr;                                             \
-		next = offset(cur, vaddr);                                         \
-		if (!(check))                                                      \
-			return;                                                    \
-		pfn = next##_pfn(*next);                                           \
-		phys_addr = (phys_addr_t)pfn << PAGE_SHIFT;                        \
-		info->next##_paddr = (unsigned long)phys_addr;                     \
-		/*info->next##_paddr = next##_val(*next);*/                        \
-		/*info->next##_paddr = */                                          \
-			/*(next##_val(*next) & next##_pfn_mask(*next)) +*/         \
-			/*next##_index(vaddr);*/ \
-	} while (false)
-
-#define next_offset(cur, next)                                                 \
-	next_offset_using(cur, next, next##_offset,                            \
-			  !next##_none(*next) &&                               \
-				  !unlikely(next##_bad(*next)) &&              \
-				  next##_present(*next))
 
 	/* zero everything in case we return early */
 	*info = (struct cab_info){ 0 };
-	next_offset(task->mm, pgd);
-	next_offset(pgd, p4d);
-	next_offset(p4d, pud);
-	next_offset(pud, pmd);
-	next_offset_using(pmd, pte, pte_offset_map, pte);
+	pgd = pgd_offset(task->mm, vaddr);
+	if (!pgd_present(*pgd))
+		return 0;
+	if (pgd_bad(*pgd) || pgd_none(*pgd))
+		return -EINVAL;
+	info->pgd_paddr = __pa(pgd);
 
-#undef next_offset
-#undef next_offset_using
+	p4d = p4d_offset(pgd, vaddr);
+	if (!p4d_present(*p4d))
+		return 0;
+	if (p4d_bad(*p4d) || p4d_none(*p4d))
+		return -EINVAL;
+	info->p4d_paddr = (pgd_val(*pgd) & PTE_PFN_MASK) + p4d_index(vaddr);
+
+	pud = pud_offset(p4d, vaddr);
+	if (!pud_present(*pud))
+		return 0;
+	if (pud_bad(*pud) || pud_none(*pud))
+		return -EINVAL;
+	info->pud_paddr = (p4d_val(*p4d) & p4d_pfn_mask(*p4d)) + pud_index(vaddr);
+
+	pmd = pmd_offset(pud, vaddr);
+	if (!pmd_present(*pmd))
+		return 0;
+	if (pmd_bad(*pmd) || pmd_none(*pmd))
+		return -EINVAL;
+	info->pmd_paddr = (pud_val(*pud) & pud_pfn_mask(*pud)) + pmd_index(vaddr);
+
+	pte = pte_offset_map(pmd, vaddr);
+	if (!pte || !pte_present(*pte))
+		return 0;
+	info->pte_paddr = (pmd_val(*pmd) & pmd_pfn_mask(*pmd)) + pte_index(vaddr);
 
 	info->pf_paddr =
 		(unsigned long)((phys_addr_t)pte_pfn(*pte) << PAGE_SHIFT);
-	info->paddr = pte_val(*pte);
+    info->paddr = info->pf_paddr | (vaddr & ~PAGE_MASK);
 	info->dirty = pte_dirty(*pte);
-	page = pte_page(*pte);
-	info->refcount = page_ref_count(page);
+	info->refcount = page_ref_count(pte_page(*pte));
+	return 0;
 }
 
 long inspect_cabinet(int pid, unsigned long vaddr, struct cab_info *inventory)
 {
+	long e;
 	kuid_t euid;
 	bool is_root;
 	struct task_struct *task;
 	struct cab_info info;
 
+	e = 0;
 	euid = current_cred()->euid;
 	is_root = uid_eq(euid, GLOBAL_ROOT_UID);
-	if (!is_root)
-		return -EACCES;
+	if (!is_root) {
+		e = -EACCES;
+		goto ret;
+	}
 	/**
 	 * Should we check root directly or check `CAP_SYS_RAWIO`,
 	 * which similarly allows accessing `/dev/mem`?
 	 */
-	//if (!capable(CAP_SYS_RAWIO))
-	//	return -EACCES;
-	if (pid < -1)
-		return -EINVAL;
+	//if (!capable(CAP_SYS_RAWIO)) {
+	//	e = -EACCES;
+	//	goto ret;
+	//}
+	if (pid < -1) {
+		e = -EINVAL;
+		goto ret;
+	}
 	if (pid == -1) {
 		pid = current->pid;
 		task = current;
@@ -97,20 +106,27 @@ long inspect_cabinet(int pid, unsigned long vaddr, struct cab_info *inventory)
 		struct pid *pid_struct;
 
 		pid_struct = find_vpid(pid);
-		if (!pid_struct)
-			return -ESRCH;
+		if (!pid_struct) {
+			e = -ESRCH;
+			goto ret;
+		}
 		task = pid_task(pid_struct, PIDTYPE_PID);
-		if (!task)
-			return -ESRCH;
+		if (!task) {
+			e = -ESRCH;
+			goto ret;
+		}
 	}
 
-	/* TODO: check vaddr is a valid addr first? */
+	e = lookup_cab_info(task, vaddr, &info);
+	if (e < 0)
+		goto ret;
+	if (copy_to_user(inventory, &info, sizeof(info)) != 0) {
+		e = -EFAULT;
+		goto ret;
+	}
 
-	lookup_cab_info(task, vaddr, &info);
-	if (copy_to_user(inventory, &info, sizeof(info)) != 0)
-		return -EFAULT;
-
-	return 0;
+ret:
+	return e;
 }
 
 int cabinet_init(void)
