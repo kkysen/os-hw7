@@ -39,7 +39,7 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 	*info = (struct cab_info){ 0 };
 	pgd = pgd_offset(task->mm, vaddr);
 	check_pxd(g);
-	info->pgd_paddr = __pa(pgd);
+	info->pgd_paddr = __pa(task->mm->pgd);
 
 	p4d = p4d_offset(pgd, vaddr);
 	check_pxd(4);
