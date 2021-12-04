@@ -38,3 +38,12 @@ However, we used our slightly-modified copy of `mmapper.c`,
 which just inserts `fflush(stdout)` before `pause()`
 so Python doesn't hang on reading.
 Also, this only checks the `pf_paddr` and `refcount` fields.
+
+In running these, tests, besides seeing that these invariants held:
+* the `pf_paddr` matching proc pagemap
+* `libc.so` having the same frame address across multiple executables
+* the `refcount` increasing when we `mmapper`ed the same file
+
+We also noticed that our `refcount` starts at 4,
+unlike 3 in the example sessions.
+But the difference in `refcount`s as we re-mapped was the same.

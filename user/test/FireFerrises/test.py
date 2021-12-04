@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -80,21 +79,26 @@ class ProcMap:
 
 
 def read_proc_maps(pid: int) -> Iterable[ProcMap]:
-    for line in open(f"/proc/{pid}/maps"):
-        parts = line.split(maxsplit=5)
-        if len(parts) != 6:
-            continue
-        range, permissions, x, time, y, file = parts
-        start, end = range.split("-")
-        yield ProcMap(
-            start=int(start, base=16),
-            end=int(end, base=16),
-            permissions=permissions,
-            x=x,
-            time=time,
-            y=y,
-            file=file,
-        )
+    try:
+        f = open(f"/proc/{pid}/maps")
+    except FileNotFoundError:
+        return ()
+    with f:
+        for line in f.read().split("\n"):
+            parts = line.split(maxsplit=5)
+            if len(parts) != 6:
+                continue
+            range, permissions, x, time, y, file = parts
+            start, end = range.split("-")
+            yield ProcMap(
+                start=int(start, base=16),
+                end=int(end, base=16),
+                permissions=permissions,
+                x=x,
+                time=time,
+                y=y,
+                file=file,
+            )
 
 
 def libc_addr(pid: int, offset: int) -> int:
