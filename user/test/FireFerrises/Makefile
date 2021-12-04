@@ -1,6 +1,9 @@
 PHONY += default
 default:
 
+PHONY += all
+all:
+
 PHONY += test
 test:
 

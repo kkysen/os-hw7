@@ -64,6 +64,7 @@ int main(int argc, char **argv)
 			f, getpid());
 	printf("to quit, press CTRL+C or run:\n\tkill -s INT %d\n",
 			getpid());
+	fflush(stdout);
 
 	pause();
 	close(fd); /* not technically necessary */

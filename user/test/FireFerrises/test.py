@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
-from typing import Iterable, Optional
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from signal import SIGINT
+from subprocess import PIPE, Popen
+from typing import IO, Iterable, Optional, Tuple
+from mmap import mmap
+import time
 
 
 @dataclass
@@ -86,6 +90,7 @@ def libc_addr(pid: int, offset: int) -> int:
             assert addr < map.end
             return addr
 
+
 @dataclass
 class CabInfo:
     paddr: int
@@ -103,10 +108,13 @@ class CabInfo:
     present: bool
 
 
+current_file = Path(__file__)
+test_dir = current_file.parent.parent
+cabinet_inspector_dir = test_dir / "cabinet_inspector"
+
+
 def inspect_cabinet(addr: Optional[int], pid: Optional[int]) -> CabInfo:
-    current_file = Path(__file__)
-    test_dir = current_file.parent.parent
-    exe_path = test_dir / "cabinet_inspector" / "cabinet_inspector"
+    exe_path = cabinet_inspector_dir / "cabinet_inspector"
     args = [exe_path]
     if addr is not None:
         args.append(hex(addr))
@@ -140,6 +148,53 @@ def inspect_cabinet(addr: Optional[int], pid: Optional[int]) -> CabInfo:
     return CabInfo(**info)
 
 
+class MMapper:
+    popen: Popen
+    _addr: int
+
+    def __init__(self, file: Path = cabinet_inspector_dir / "foo"):
+        exe_path = cabinet_inspector_dir / "mmapper"
+        popen = Popen(
+            args=[exe_path, file],
+            # args=["yes"],
+            stdout=PIPE,
+            bufsize=1,
+            universal_newlines=True,
+        )
+        # output: Tuple[IO, IO] = popen.communicate()
+        # print(output)
+        # stdout, stderr = output
+        # popen.stdout = stdout
+        # popen.stderr = stderr
+        self.popen = popen
+        self._addr = -1
+
+    @property
+    def addr(self) -> int:
+        if self._addr >= 0:
+            return self._addr
+        output: str = self.popen.stdout.readline()
+        addr_start = output.index("0x")
+        addr_end = output.index(" ", addr_start)
+        addr_str = output[addr_start:addr_end]
+        addr = int(addr_str, base=16)
+        self._addr = addr
+        return addr
+
+    def inspect(self) -> CabInfo:
+        return inspect_cabinet(addr=self.addr, pid=self.popen.pid)
+
+    def kill(self):
+        self._addr = -1
+        self.popen.send_signal(sig=SIGINT)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.kill()
+
+
 def session1():
     # check the two dynamically linked libc addresses use the same page
     sshds = find_sshds()
@@ -151,14 +206,26 @@ def session1():
     cab2 = inspect_cabinet(addr=addr2, pid=p2.pid)
     assert cab1.pf_paddr == cab2.pf_paddr
 
+
 def session2():
     # just do internal check
     inspect_cabinet(addr=None, pid=None)
 
 
+def session3():
+    with MMapper() as foo1:
+        cab1 = foo1.inspect()
+        with MMapper() as foo2:
+            cab2 = foo2.inspect()
+        cab3 = foo1.inspect()
+    assert cab1.refcount == cab3.refcount
+    assert cab1.refcount + 1 == cab2.refcount
+
+
 def main():
     session1()
     session2()
+    session3()
 
 
 if __name__ == "__main__":
