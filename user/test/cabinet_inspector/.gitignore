@@ -1,3 +1,4 @@
+*.o
 cabinet_inspector
 mmapper
 foo

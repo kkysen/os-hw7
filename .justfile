@@ -298,7 +298,7 @@ run-mod mod_path *args:
 
 test-cmd *args: (run-mod default_mod_path args)
 
-test: (test-cmd "just" "make-in" join("user/test", team_name) "test-all")
+test: (test-cmd "just" "make-in" join("user/test", team_name) "test")
 
 current-branch:
     git branch --show-current || git rev-parse --abbrev-ref HEAD

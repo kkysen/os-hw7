@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
 
+import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from signal import SIGINT
 from subprocess import PIPE, Popen
-from typing import IO, Iterable, Optional, Tuple
-from mmap import mmap
-import time
+from typing import Iterable, Optional
+
+
+def check_python_version():
+    version = sys.version_info
+    if (3, 7) <= version < (3, 9):
+        print(
+            f"tested on python 3.9 but using python {version.major}.{version.minor}")
+    elif version < (3, 7):
+        print(
+            f"need at least python 3.7 but using python {version.major}.{version.minor}")
+        exit(1)
+
+
+check_python_version()
 
 
 @dataclass
@@ -109,7 +123,8 @@ class CabInfo:
 
 
 current_file = Path(__file__)
-test_dir = current_file.parent.parent
+current_dir = current_file.parent
+test_dir = current_dir.parent
 cabinet_inspector_dir = test_dir / "cabinet_inspector"
 
 
@@ -153,19 +168,13 @@ class MMapper:
     _addr: int
 
     def __init__(self, file: Path = cabinet_inspector_dir / "foo"):
-        exe_path = cabinet_inspector_dir / "mmapper"
+        exe_path = current_dir / "mmapper"
         popen = Popen(
             args=[exe_path, file],
-            # args=["yes"],
             stdout=PIPE,
-            bufsize=1,
-            universal_newlines=True,
+            bufsize=0,
+            text=True,
         )
-        # output: Tuple[IO, IO] = popen.communicate()
-        # print(output)
-        # stdout, stderr = output
-        # popen.stdout = stdout
-        # popen.stderr = stderr
         self.popen = popen
         self._addr = -1
 
