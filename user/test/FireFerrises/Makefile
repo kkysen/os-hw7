@@ -12,5 +12,6 @@ PHONY += test-all
 test-all:
 	$(MAKE) -C ../cabinet_inspector/ all
 	sudo ../cabinet_inspector/cabinet_inspector
+	sudo ./test.py
 
 .PHONY: $(PHONY)
