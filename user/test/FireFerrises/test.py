@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Iterable
+from typing import Iterable, Optional
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,14 +103,16 @@ class CabInfo:
     present: bool
 
 
-def inspect_cabinet(addr: int, pid: int) -> CabInfo:
+def inspect_cabinet(addr: Optional[int], pid: Optional[int]) -> CabInfo:
     current_file = Path(__file__)
     test_dir = current_file.parent.parent
-    output = subprocess.check_output(args=[
-        test_dir / "cabinet_inspector" / "cabinet_inspector",
-        hex(addr),
-        str(pid),
-    ])
+    exe_path = test_dir / "cabinet_inspector" / "cabinet_inspector"
+    args = [exe_path]
+    if addr is not None:
+        args.append(hex(addr))
+    if pid is not None:
+        args.append(str(pid))
+    output = subprocess.check_output(args=args)
     lines = output.decode("utf-8").split("\n")
     info = {}
     for line in lines:
@@ -139,6 +141,7 @@ def inspect_cabinet(addr: int, pid: int) -> CabInfo:
 
 
 def session1():
+    # check the two dynamically linked libc addresses use the same page
     sshds = find_sshds()
     p1: PsAux = next(sshds)
     p2: PsAux = next(sshds)
@@ -148,9 +151,14 @@ def session1():
     cab2 = inspect_cabinet(addr=addr2, pid=p2.pid)
     assert cab1.pf_paddr == cab2.pf_paddr
 
+def session2():
+    # just do internal check
+    inspect_cabinet(addr=None, pid=None)
+
 
 def main():
     session1()
+    session2()
 
 
 if __name__ == "__main__":
