@@ -29,11 +29,13 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 	pmd_t *pmd;
 	pte_t *pte;
 
-	#define check_pxd(x) \
-	if (!p##x##d_present(*p##x##d)) \
-		return 0; \
-	if (p##x##d_bad(*p##x##d) || p##x##d_none(*p##x##d)) \
-		return -EINVAL
+#define check_pxd(x)                                                           \
+	do {                                                                   \
+		if (!p##x##d_present(*p##x##d))                                \
+			return 0;                                              \
+		if (p##x##d_bad(*p##x##d) || p##x##d_none(*p##x##d))           \
+			return -EINVAL;                                        \
+	} while (false)
 
 	/* zero everything in case we return early */
 	*info = (struct cab_info){ 0 };
@@ -58,12 +60,12 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 		return 0;
 	info->pte_paddr = (pmd_val(*pmd) & pmd_pfn_mask(*pmd));
 
-	#undef set_paddr
-	#undef check_pxd
+#undef set_paddr
+#undef check_pxd
 
 	info->pf_paddr =
 		(unsigned long)((phys_addr_t)pte_pfn(*pte) << PAGE_SHIFT);
-    info->paddr = info->pf_paddr | (vaddr & ~PAGE_MASK);
+	info->paddr = info->pf_paddr | (vaddr & ~PAGE_MASK);
 	info->dirty = pte_dirty(*pte);
 	info->refcount = page_ref_count(pte_page(*pte));
 	return 0;
