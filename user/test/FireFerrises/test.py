@@ -124,7 +124,6 @@ class CabInfo:
     file_page: bool
     swapped: bool
     present: bool
-    inspect_cabinet: str # error message
 
 
 current_file = Path(__file__)
@@ -142,9 +141,7 @@ def inspect_cabinet(addr: Optional[int], pid: Optional[int]) -> CabInfo:
         args.append(str(pid))
     output = subprocess.check_output(args=args)
     lines = output.decode("utf-8").split("\n")
-    info = {
-        "inspect_cabinet": "",
-    }
+    info = {}
     for line in lines:
         parts = line.split(": ")
         if len(parts) != 2:
