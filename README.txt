@@ -47,3 +47,12 @@ In running these, tests, besides seeing that these invariants held:
 We also noticed that our `refcount` starts at 4,
 unlike 3 in the example sessions.
 But the difference in `refcount`s as we re-mapped was the same.
+
+We also checked a bunch of error conditions on the command line.
+When we tried a low pid, like 16,
+we found that `task->mm == NULL` because it's a kernel thread.
+Since kernel threads use the kernel address space,
+we used init's mm instead for this.
+However, since `init_mm` is not exported,
+we had to set `pid = 1` and redo the lookup
+(`init_task.mm` was also `NULL`).

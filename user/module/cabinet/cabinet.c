@@ -12,6 +12,7 @@
 #include <linux/uaccess.h>
 #include <linux/pgtable.h>
 #include <linux/page_ref.h>
+#include <linux/init_task.h>
 
 #pragma GCC diagnostic pop
 
@@ -23,11 +24,33 @@ extern long (*inspect_cabinet_default)(int pid, unsigned long vaddr,
 long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 		     struct cab_info *info)
 {
+	struct mm_struct *mm;
 	pgd_t *pgd;
 	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
+
+	/* zero everything in case we return early */
+	*info = (struct cab_info){ 0 };
+
+	if (task->mm) {
+		mm = task->mm;
+	} else {
+		/**
+		 * `task->mm == NULL` for kernel threads,
+		 * but they use the kernel address space,
+		 * so we tried to use `&init_mm`, but it's not exported.
+		 * `init_task.mm` is actually `NULL`, too,
+		 * so we look up the `task_struct` for pid 1 (elsewhere),
+		 * which does work.
+		 */
+		mm = init_task.mm;
+		if (!mm) {
+			/* pgd not present */
+			return 0;
+		}
+	}
 
 #define check_pxd(x)                                                           \
 	do {                                                                   \
@@ -37,11 +60,9 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 			return 0;                                              \
 	} while (false)
 
-	/* zero everything in case we return early */
-	*info = (struct cab_info){ 0 };
-	pgd = pgd_offset(task->mm, vaddr);
+	pgd = pgd_offset(mm, vaddr);
 	check_pxd(g);
-	info->pgd_paddr = __pa(task->mm->pgd);
+	info->pgd_paddr = __pa(mm->pgd);
 
 	p4d = p4d_offset(pgd, vaddr);
 	check_pxd(4);
@@ -68,6 +89,16 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 	info->dirty = pte_dirty(*pte);
 	info->refcount = page_ref_count(pte_page(*pte));
 	return 0;
+}
+
+struct task_struct *find_task_by_vpid2(pid_t pid)
+{
+	struct pid *pid_struct;
+
+	pid_struct = find_vpid(pid);
+	if (!pid_struct)
+		return NULL;
+	return pid_task(pid_struct, PIDTYPE_PID);
 }
 
 long inspect_cabinet(int pid, unsigned long vaddr, struct cab_info *inventory)
@@ -101,17 +132,25 @@ long inspect_cabinet(int pid, unsigned long vaddr, struct cab_info *inventory)
 		pid = current->pid;
 		task = current;
 	} else {
-		struct pid *pid_struct;
-
-		pid_struct = find_vpid(pid);
-		if (!pid_struct) {
-			e = -ESRCH;
-			goto ret;
-		}
-		task = pid_task(pid_struct, PIDTYPE_PID);
+		task = find_task_by_vpid2(pid);
 		if (!task) {
 			e = -ESRCH;
 			goto ret;
+		}
+
+		if (!task->mm) {
+			/**
+			 * For when `task->mm == NULL`, reuse init's mm
+			 * because the kernel thread (those with null mm's)
+			 * is still using the kernel address space.
+			 * However, `/proc/{pid}/pagemap` does fail in this case.
+			 */
+			task = find_task_by_vpid2(1);
+			if (!task) {
+				/* shouldn't happen but don't want to segfault ever */
+				e = -ESRCH;
+				goto ret;
+			}
 		}
 	}
 
