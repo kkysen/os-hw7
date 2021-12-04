@@ -31,10 +31,10 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 
 #define check_pxd(x)                                                           \
 	do {                                                                   \
-		if (!p##x##d_present(*p##x##d))                                \
-			return 0;                                              \
 		if (p##x##d_bad(*p##x##d) || p##x##d_none(*p##x##d))           \
 			return -EINVAL;                                        \
+		if (!p##x##d_present(*p##x##d))                                \
+			return 0;                                              \
 	} while (false)
 
 	/* zero everything in case we return early */
