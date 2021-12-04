@@ -60,7 +60,6 @@ long lookup_cab_info(struct task_struct *task, unsigned long vaddr,
 		return 0;
 	info->pte_paddr = (pmd_val(*pmd) & pmd_pfn_mask(*pmd));
 
-#undef set_paddr
 #undef check_pxd
 
 	info->pf_paddr =
